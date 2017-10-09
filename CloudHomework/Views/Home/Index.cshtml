@@ -1,0 +1,273 @@
+﻿@model IEnumerable<string>
+
+@{
+    ViewBag.Title = "Index";
+}
+
+<style type="text/css">
+    .main-table{
+        width: 100%;
+    }
+
+    .main-table tr td {
+        width: 33%;
+    }
+
+    .main-table tr {
+        vertical-align: top;
+    }
+</style>
+
+<output id="errormsg" name="errormsg"></output><br/>
+
+<table class="main-table">
+    <tr>
+            <td>
+                <h3>Sign up or Log in!</h3>
+                <h5>Username:</h5>
+                <input type="text" name="username" id="username" class="form-control" /><br/>
+                <h5>Password:</h5>
+                <input type="text" name="password" id="password" class="form-control" /><br />
+                <input type="button" value="Do it!" id="user-btn" class="btn btn-default" /><br />
+                <br />
+                <h5>Email:</h5>
+                <input type="text" name="email" id="email" class="form-control" /><br />
+                <h5>Comment:</h5>
+                <textarea id="comment" class="form-control"></textarea><br />
+                <input type="button" value="Save" disabled id="userupdate-btn" class="btn btn-default" /><br />
+            </td>
+            <td>
+            <h3>Select a Queue</h3>
+            <h5>Queue Explorer</h5>
+            <div id="queues">
+                @if (Model.Any())
+                {
+                    <select id="queues-select" disabled>
+                    @foreach (var item in Model)
+                    {
+                        <option value="@item">@item</option>
+                    }
+                    </select>
+                }
+                else
+                {
+                    <span>There is no available queue!</span>
+                }
+                <br />
+                Message count: <span id="message-count"></span>
+            </div>
+        </td>
+        <td>
+            <h3>Send a message</h3>
+            <h5>Message</h5>
+            <textarea id="message" class="form-control"></textarea>
+            <input type="button" value="Send" disabled class="btn btn-default" id="send-btn" />
+
+            <h3>Message details</h3>
+            <h5>Content</h5>
+            <div id="message-details-content"></div>
+            <h6>BrokeredMessage Properties</h6>
+            <div id="message-details-brokeredmsg"></div>
+            <h6>Message Properties</h6>
+            <div id="message-details-msg-properties"></div>
+
+        </td>
+        <td>
+            <h3>Read a message</h3>
+            <div id="loading-queue" style="display: none">Loading...</div>
+            <input type="button" value="Receive" disabled id="receive-btn" class="btn btn-default" />
+        </td>
+    </tr>
+    <tr>
+        <td></td>
+        <td></td>
+        <td>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <input type="hidden" name="loggeduser" id="loggeduser" value="" />
+        </td>
+    </tr>
+</table>
+
+    <h3>Stack Log</h3>
+    <div id="logs"></div>
+
+@section scripts {
+<script type="text/javascript">
+    var selectedQueueName = null;
+
+    function selectedQueueChanged(e) {
+        selectedQueueName = $(e.target).val();
+    }
+
+    function updateMessageCount() {
+        $.ajax({
+            url: "@Url.Action("MessageCount")?queueName=" + selectedQueueName,
+            method: "GET",
+            success: function (data) {
+                $("#message-count").html(data);
+            }
+        });
+    }
+
+    function refreshLog() {
+        $.ajax({
+            url: "@Url.Action("GetRecentLogs")",
+            method: "POST",
+            data: {
+                queueName: selectedQueueName
+            },
+            success: function (data) {
+
+                var s = "";
+                for (var i = data.list.length-1; i >= 0; i--) {
+                    data.list[i][3] = (data.list[i][3] == "True") ? "pushed" : "poped";
+                    s += "<li>" + data.list[i][0] + " - " + data.list[i][1] + " - " + data.list[i][3] + " - " + data.list[i][2] + "</li>";
+                }
+
+                $("#logs").html("<ul>" + s + "</ul>");
+            }
+        });
+    }
+
+    function onload() {
+        $("#queues-select").change(selectedQueueChanged);
+        selectedQueueName = $("#queues-select").val();
+
+        $("#send-btn").click(function () {
+            $.ajax({
+                url: "@Url.Action("SendMessage")",
+                method: "POST",
+                data: {
+                    queueName: selectedQueueName,
+                    messageBody: $("#message").val(),
+                    username: $("#username").val()
+                },
+                success: function() {
+                    $("#message").val("");
+                    refreshLog();
+                    alert("Message sending was successful!");
+                }
+            });
+        });
+
+        $("#receive-btn").click(function () {
+            $("#loading-queue").show();
+            $.ajax({
+                url: "@Url.Action("RetrieveMessage")?queueName=" + selectedQueueName + "&username=" + $("#username").val(),
+                method: "GET",
+                success: function (data) {
+                    $("#message-details-content").html("<b>Date</b>: " + data.Date + "<br>\n<b>Message</b>: " + data.Message);
+                    var s = "";
+                    for (var i = 0; i < data.BrokeredMsgProperties.length; i++) {
+                        var curr = data.BrokeredMsgProperties[i];
+                        s += "<b>" + curr.Key + "</b>: " + curr.Value + "<br/>";
+                    }
+
+                    $("#message-details-brokeredmsg").html(s);
+                    s = "";
+                    for (var i = 0; i < data.Properties.length; i++) {
+                        var curr = data.Properties[i];
+                        s += "<b>" + curr.Key + "</b>: " + curr.Value + "<br/>";
+                    }
+                    $("#message-details-msg-properties").html(s);
+                    $("#loading-queue").hide();
+                    refreshLog();
+                },
+                error: function (data) {
+                    alert("There is no message in the queue!");
+                    $("#loading-queue").hide();
+                }
+            });
+        });
+
+        $("#user-btn").click(function () {
+            $.ajax({
+                url: "@Url.Action("DoUser")",
+                method: "POST",
+                data: {
+                    username: $("#username").val(),
+                    password: $("#password").val()
+                },
+                success: function (data) {
+                    $("#loggeduser").val(data.username);
+                    $("#email").val(data.email);
+                    alert("Sikeres bejelentkezés!")
+                    $('#user-btn').prop("disabled", true);
+                    $('#userupdate-btn').prop("disabled", false);
+                    $('#send-btn').prop("disabled", false); 
+                    $('#queues-select').prop("disabled", false);
+                    $('#receive-btn').prop("disabled", false);
+                    $('#username').prop("disabled", true);
+                    $('#password').prop("disabled", true);
+
+                    $.ajax({
+                        url: "@Url.Action("GetUserComment")",
+                        method: "POST",
+                        data: {
+                            username: $("#username").val()
+                        },
+                        success: function (data) {
+                            $("#comment").val(data.comment);
+                        },
+                        error: function (data) {
+                            alert("Érvénytelen művelet #02");
+                        }
+
+                    });
+
+                    refreshLog();
+
+                },
+                error: function (data) {
+                    alert("Érvénytelen művelet #01");
+                }
+            });
+        });
+
+
+        $("#userupdate-btn").click(function () {
+            $.ajax({
+                url: "@Url.Action("UpdateUser")",
+                method: "POST",
+                data: {
+                    username: $("#username").val(),
+                    email: $("#email").val()
+                },
+                success: function(data) {
+                },
+                error: function(data) {
+                    alert("Érvénytelen művelet #03");
+                }
+            });
+
+            $.ajax({
+                url: "@Url.Action("SetUserComment")",
+                method: "POST",
+                data: {
+                    username: $("#username").val(),
+                    comment: $("#comment").val()
+                },
+                success: function (data) {
+                },
+                error: function (data) {
+                    alert("Érvénytelen művelet #03");
+                }
+            });
+
+            alert("Sikeres módosítás!")
+        });
+
+        $("#refreshlog-btn").click(function () {
+            refreshLog();
+        });
+
+        updateMessageCount();
+        setInterval(updateMessageCount, 2000);
+    }
+
+    $(onload);
+</script>
+}
